@@ -1,0 +1,6 @@
+{
+  "name": "AuraSlide Studio",
+  "description": "Google AI powered presentation engine that automatically converts documents and notes into structured slide presentations with fluid motion, dynamic themes, and audio transitions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
