@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, DragEvent } from "react";
 import { Slide, SlideTheme } from "./types";
 import { NOTEBOOK_SAMPLES, DEFAULT_SLIDES, NotebookSample } from "./data";
+import { createInstantDraft } from "./slideDraft";
 import { playSelectedSound, playClickSound, playWhooshSound } from "./sound";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -74,6 +75,7 @@ export default function App() {
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState<boolean>(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>("");
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState<boolean>(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
 
@@ -126,6 +128,11 @@ export default function App() {
 
   const handleIncomingFile = (file: File) => {
     if (!file) return;
+    if (!/\.(txt|md|csv)$/i.test(file.name)) {
+      setAiStatus("Please upload a TXT, Markdown, or CSV file. PDF extraction is not available in this browser-only uploader.");
+      return;
+    }
+    setIsWorkspaceOpen(true);
     setUploadedFileName(file.name);
     setAiStatus(`Extracting text array layers from file storage...`);
 
@@ -139,9 +146,6 @@ export default function App() {
       }
     };
 
-    if (file.name.endsWith('.pdf')) {
-      setAiStatus("Extracting raw strings. For production heavy PDFs, converting to .txt first offers maximum reliability.");
-    }
     reader.readAsText(file);
   };
 
@@ -164,6 +168,7 @@ export default function App() {
 
   const handleSelectSample = (sample: NotebookSample) => {
     if (audioEnabled) playClickSound();
+    setIsWorkspaceOpen(true);
     setUploadedFileName(null);
     setRawNotes(sample.text);
     setAiStatus(`Loaded sample template: "${sample.name.slice(2)}". Click generate below to synthesize.`);
@@ -197,6 +202,8 @@ export default function App() {
       setAiStatus("Please paste or load document data inside the input box.");
       return;
     }
+
+    setIsWorkspaceOpen(true);
 
     setIsGenerating(true);
     setAiStatus("Connecting to Google AI Studio pipeline...");
@@ -236,8 +243,13 @@ export default function App() {
       if (data.slides && data.slides.length > 0) {
         setSlides(data.slides);
         setCurrentIndex(0);
-        setAiStatus(`Success! Generated ${data.slides.length} slides.`);
-        setGenerationSteps((prev) => [...prev, "Generation complete! Enjoy your custom deck."]);
+        const usedLocalDraft = data.mode === "local";
+        setAiStatus(usedLocalDraft
+          ? `Instant draft ready: ${data.slides.length} editable slides created locally.`
+          : `Success! Generated ${data.slides.length} slides.`);
+        setGenerationSteps((prev) => [...prev, usedLocalDraft
+          ? "Local draft complete. Add GEMINI_API_KEY to enable AI refinement."
+          : "Generation complete! Enjoy your custom deck."]);
         if (audioEnabled) playSelectedSound(soundType);
       } else {
         throw new Error("No slides returned from the model structure");
@@ -251,6 +263,21 @@ export default function App() {
     }
   };
 
+  const handleCreateInstantDraft = () => {
+    const draft = createInstantDraft(rawNotes);
+    if (!draft.length) {
+      setAiStatus("Please paste or load source material before creating a draft.");
+      return;
+    }
+
+    setIsWorkspaceOpen(true);
+    if (audioEnabled) playSelectedSound(soundType);
+    setSlides(draft);
+    setCurrentIndex(0);
+    setGenerationSteps(["Instant local outline created. Edit any slide directly on the canvas."]);
+    setAiStatus(`Instant draft ready: ${draft.length} editable slides created without an API call.`);
+  };
+
   const handleResetToDefault = () => {
     if (audioEnabled) playClickSound();
     setSlides(DEFAULT_SLIDES);
@@ -258,6 +285,7 @@ export default function App() {
     setRawNotes("");
     setAiStatus("Reset presentation canvas to default welcome deck.");
     setGenerationSteps([]);
+    setIsWorkspaceOpen(false);
   };
 
   const updateCurrentSlideTitle = (newTitle: string) => {
@@ -414,6 +442,93 @@ export default function App() {
         item.slide.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.slide.body.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+  if (!isWorkspaceOpen) {
+    return (
+      <div className="min-h-screen bg-[#212121] text-[#ececec] font-sans flex">
+        <aside className="hidden md:flex w-[260px] shrink-0 flex-col border-r border-white/10 bg-[#171717] p-3">
+          <button
+            onClick={() => {
+              setRawNotes("");
+              setSlides(DEFAULT_SLIDES);
+              setCurrentIndex(0);
+              setAiStatus("Start with an idea, notes, or a document.");
+            }}
+            className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-left hover:bg-white/10 transition-colors"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-base">✦</span>
+            <span>New presentation</span>
+          </button>
+
+          <div className="mt-8 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Your workspace</div>
+          <button onClick={() => { setSidebarTab("notebook"); setIsWorkspaceOpen(true); }} className="mt-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/10 text-left">
+            <FileText className="h-4 w-4" /> Draft a deck
+          </button>
+          <button onClick={() => { setSidebarTab("chatgpt"); setIsWorkspaceOpen(true); }} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/10 text-left">
+            <MessageSquare className="h-4 w-4" /> Ask AuraGPT
+          </button>
+
+          <div className="mt-auto rounded-xl border border-white/10 bg-white/[0.04] p-3">
+            <div className="flex items-center gap-2 text-sm font-medium"><Sparkles className="h-4 w-4 text-violet-300" /> AuraSlide Studio</div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">Turn notes into a presentation, then edit and present it in one place.</p>
+          </div>
+        </aside>
+
+        <main className="flex min-h-screen flex-1 flex-col">
+          <header className="flex h-14 items-center justify-between px-4 md:px-7">
+            <button className="flex items-center gap-2 text-sm font-semibold" onClick={() => setIsWorkspaceOpen(true)}>
+              <span className="md:hidden flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600">✦</span>
+              AuraSlide <span className="text-zinc-500">AI</span>
+            </button>
+            <button onClick={() => { setSidebarTab("chatgpt"); setIsWorkspaceOpen(true); }} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10">Ask AuraGPT</button>
+          </header>
+
+          <section className="flex flex-1 flex-col items-center justify-center px-4 pb-24">
+            <div className="w-full max-w-3xl">
+              <div className="mb-8 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-950/40"><Sparkles className="h-6 w-6" /></div>
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">What will you present today?</h1>
+                <p className="mt-3 text-sm text-zinc-400">Paste notes, upload a text file, or start from a ready-made topic.</p>
+              </div>
+
+              <form onSubmit={(event) => { event.preventDefault(); handleGenerateSlides(); }} className="rounded-2xl border border-white/10 bg-[#2f2f2f] p-3 shadow-2xl shadow-black/20 focus-within:border-white/20">
+                <textarea
+                  value={rawNotes}
+                  onChange={(event) => setRawNotes(event.target.value)}
+                  placeholder="Message AuraSlide with a topic, outline, or source material..."
+                  className="h-32 w-full resize-none bg-transparent px-2 py-2 text-[15px] leading-relaxed text-zinc-100 placeholder:text-zinc-500 outline-none"
+                  aria-label="Presentation source material"
+                />
+                <div className="flex items-center justify-between gap-3 pt-2">
+                  <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white" title="Upload TXT, Markdown, or CSV">
+                    <Upload className="h-4 w-4" />
+                    <input type="file" accept=".txt,.md,.csv,text/plain,text/markdown,text/csv" className="hidden" onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) handleIncomingFile(file);
+                      event.currentTarget.value = "";
+                    }} />
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" disabled={!rawNotes.trim()} onClick={handleCreateInstantDraft} className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-zinc-600">Instant draft</button>
+                    <button type="submit" disabled={!rawNotes.trim() || isGenerating} className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-zinc-900 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-600 disabled:text-zinc-400">
+                      <Sparkles className="h-3.5 w-3.5" /> Generate
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {NOTEBOOK_SAMPLES.map((sample) => (
+                  <button key={sample.name} onClick={() => handleSelectSample(sample)} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-zinc-300 transition-colors hover:bg-white/10 hover:text-white">{sample.name}</button>
+                ))}
+              </div>
+              <p className="mt-5 text-center text-xs text-zinc-500">AI generation uses Gemini when configured. Instant drafts work locally.</p>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col md:flex-row font-sans overflow-hidden">
@@ -625,7 +740,7 @@ export default function App() {
                    <input
                      type="file"
                      id="docFile"
-                     accept=".txt,.pdf"
+                     accept=".txt,.md,.csv,text/plain,text/markdown,text/csv"
                      onChange={(e) => {
                        if (e.target.files && e.target.files.length > 0) {
                          handleIncomingFile(e.target.files[0]);
@@ -641,7 +756,7 @@ export default function App() {
                      
                      <div>
                        <span className="text-xs font-medium text-slate-300 block">
-                         {uploadedFileName ? `✔️ Loaded: ${uploadedFileName.substring(0, 20)}...` : "Click to Upload PDF / TXT"}
+                         {uploadedFileName ? `✔️ Loaded: ${uploadedFileName.substring(0, 20)}...` : "Click to Upload TXT / MD / CSV"}
                        </span>
                        <span className="text-[10px] text-slate-500 mt-1 block">
                          Drag and drop files here to parse
@@ -866,6 +981,21 @@ export default function App() {
                  <span>Generate Presentation</span>
                </>
              )}
+           </button>
+
+           <button
+             onClick={handleCreateInstantDraft}
+             disabled={isGenerating || !rawNotes.trim()}
+             className={`w-full py-2.5 px-4 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition-all border ${
+               !rawNotes.trim() || isGenerating
+                 ? "bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed"
+                 : "bg-slate-900 text-blue-300 border-slate-700 hover:border-blue-500/60 hover:bg-slate-800 cursor-pointer"
+             }`}
+             id="instant-draft-btn"
+             title="Create an editable presentation outline without an API call"
+           >
+             <FileText className="w-3.5 h-3.5" />
+             <span>Instant Draft (no API)</span>
            </button>
 
            <button

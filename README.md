@@ -18,3 +18,11 @@ View your app in AI Studio: https://ai.studio/apps/c616416f-6048-435a-b713-d716e
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Working without an API key
+
+Use **Instant Draft (no API)** after pasting notes to create a concise, editable
+local outline. The main **Generate Presentation** action also returns a local
+draft automatically when `GEMINI_API_KEY` is not configured. Configure that key
+to enable AI generation and AuraGPT; set `GEMINI_MODEL` only when you need to
+override the default `gemini-2.5-flash`.

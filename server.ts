@@ -3,11 +3,13 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { createInstantDraft } from "./src/slideDraft";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 app.use(express.json());
 
@@ -31,12 +33,22 @@ function getAI(): GoogleGenAI {
   return aiClient;
 }
 
-// Endpoint to generate structured slides using Gemini 3.5-flash
+// Endpoint to generate structured slides using the configured Gemini model.
 app.post("/api/generate-slides", async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || typeof text !== "string" || !text.trim()) {
       return res.status(400).json({ error: "Input text is required" });
+    }
+
+    // A local deck keeps the primary workflow usable before an API key is
+    // configured. API-backed generation remains the preferred enriched path.
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        slides: createInstantDraft(text),
+        mode: "local",
+        notice: "Created a local draft because GEMINI_API_KEY is not configured.",
+      });
     }
 
     const ai = getAI();
@@ -75,7 +87,7 @@ Research material/Notes:
 ${text}`;
 
     const aiResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -116,7 +128,7 @@ app.post("/api/chat", async (req, res) => {
     }));
 
     const aiResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: contents,
       config: {
         systemInstruction: "You are AuraGPT, an elite, highly creative conversational AI assistant powered by Google Gemini, built directly into AuraSlide Studio. You provide limitless assistance with same capabilities as ChatGPT. You are highly intelligent, articulate, and friendly. Help the user with brainstorming, researching, planning presentations, writing code, or general conversation. You can format answers beautifully with paragraphs, clean bullet points, or lists."
